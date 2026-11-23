@@ -1,4 +1,4 @@
-# Tachyon UI
+# Tachyon-UI
 
 [English](README.md) | **Русский**
 

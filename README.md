@@ -1,4 +1,4 @@
-# Tachyon UI
+# Tachyon-UI
 
 **English** | [Русский](README.ru.md)
 
@@ -47,7 +47,7 @@ See [Chapter 1](docs/en/01-installation-and-cli.md) for source builds, `x86_64-u
 
 ## Interface Overview
 
-![Tachyon UI Dashboard](docs/images/en/02-dashboard.png)
+![Tachyon-UI Dashboard](docs/images/en/02-dashboard.png)
 
 | Site, Domain, HTTP/HTTPS & Defense Wizard | Balancer Builder (12 `urltest` Modes, `tiers`, `chain`) |
 | :---: | :---: |
