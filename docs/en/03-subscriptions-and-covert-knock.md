@@ -11,28 +11,44 @@ The **Subscriptions** module consolidates all user protocols and endpoints into 
 ## Subscriptions, Profiles & Device Management
 
 - **Grouping by `sub_id`**: Clients sharing the same `sub_id` across different inbound protocols (VLESS+REALITY, Hysteria2, TUIC, WireGuard/AWG, Sudoku, WDTT) are bundled into one subscription.
-- **Subscription Profiles (`/api/sub-profiles`)**: Reusable presets (device limit, On-Hold `start_on_first_use`, `daily`/`weekly`/`monthly` traffic reset, balancer sets, `announce` banner) applied in one click.
+- **Subscription Profiles (`/api/sub-profiles`) & Quick Invite (`/api/subs/quick-invite`)**: Reusable presets (device limit, On-Hold `start_on_first_use`, `daily`/`weekly`/`monthly` traffic reset, balancer sets, `announce` banner) applied in one click or used for instant test/VIP invite generation.
+- **360-Degree Inspector, Batch Actions & External Import**: Right-side subscription inspector drawer, batch operations (`/api/subs/batch-action` to enable/disable, extend days, or apply profiles), token rotation (`/api/subs/rotate-token`), strike clearing (`/api/subs/clear-strikes`), request header inspector (`/api/subs/inspect-headers`), and external subscription imports (`/api/subs/import-external`).
 - **HWID Device Limits**:
   - `device_limit` caps bound devices / concurrent IPs; `strict_hwid` enforces an `x-hwid` header.
   - Clients can self-unbind old devices via the portal (`POST <sub_path>/unbind-device`), governed by `sub_unbind_cooldown_hours`.
 - **Account Guard / Anti-Share**: Tracks concurrent `/24` subnets per subscription (`anti_share_max_subnets`), records strikes, and logs `suspect_ips`.
-- **Custom Entry Hosts (`hosts`) & Per-Node Rules (`node_rules`)**: Override public host/port/SNI/Host header for CDN or transit relays, and restrict specific nodes to chosen `.trs` rule-sets or traffic classes (`only_this` / `prefer_node`, enforced server-side via `server_unmatched`: `block` / `direct` / `client_only`).
+- **Custom Entry Hosts (`hosts`), External Front & `node_rules`**: Override public host/port/SNI/Host header for CDN or transit relays (while `unified_443_front` automatically exports localhost L7 nodes as `<domain>:443` with strict TLS and zero `insecure` flags), and restrict specific nodes to chosen `.trs` rule-sets or traffic classes (`only_this` / `prefer_node`, enforced server-side via `server_unmatched`: `block` / `direct` / `client_only`).
+- **Web Portal Branding & Customization**: Configure layout (`sub_page_layout`), accent color (`sub_theme_accent`), logo URL (`sub_logo_url`), announcement text (`sub_announce`), support/buy/channel links (`sub_support_url`, `sub_buy_url`, `sub_buy_label`, `sub_tg_channel_url`), node list/FAQ/donation toggles (`sub_show_nodes`, `sub_show_faq`, `sub_show_donate`), allowed client app buttons (`sub_enabled_apps`), client DNS & ad-blocking (`sub_client_dns`, `sub_client_block_ads`), plus custom CSS/HTML (`sub_custom_css`, `sub_custom_html`).
 - **Vouchers (`/redeem`)**: Batch-generate redemption codes (`/api/vouchers/batch`) that users exchange for active subscriptions at `/redeem` or a custom `redeem_path`.
 
 ---
 
-## Supported Client Output Formats
+## Supported Client Output Formats & Query Options
 
-A single subscription endpoint adapts automatically via `User-Agent`, or explicitly via `?format=`:
+A single subscription endpoint adapts automatically via `User-Agent`, or explicitly via `?format=` (or `?fmt=`):
 
 | Output Format | Query `?format=` | Notes |
 | :--- | :--- | :--- |
-| **`tachyon-core` / `sing-box`** | `sing-box` / `tachyon` | Full JSON profile including all 12 `urltest` modes, `balancer`, `chain`, `time_window`, `.trs` rules, and native protocols. |
-| **Clash / Mihomo** | `clash` / `mihomo` | YAML with `select`, `url-test`, `fallback`, `load-balance`, and `relay` groups. |
-| **Raw / V2Ray / Xray** | `raw` / `v2ray` / `base64` | Base64-encoded URI list (`vless://`, `hy2://`, `tuic://`, `trojan://`, `ss://`, `vmess://`). |
-| **Happ / Hiddify / v2rayTun / Shadowrocket / NekoBox** | Auto via `User-Agent` | Client-specific headers (`Subscription-Userinfo`, `Profile-Update-Interval`, Happ routing headers when `happ_routing_enabled`). |
-| **WireGuard / AmneziaWG** | `wg` / `awg` | Ready-to-import `.conf` tunnel profile. |
-| **Web Portal** | `html` (or browser `Accept: text/html`) | User portal displaying traffic quota, device list, QR code, and one-click client import links. |
+| **`tachyon-core` / `sing-box`** | `singbox` / `sing-box` / `tachyon` / `json` | Full JSON profile including all 12 `urltest` modes, `balancer`, `chain`, `time_window`, `.trs` rules, and native protocols. |
+| **JSON Outbounds Only** | `outbounds` | Returns only the JSON `outbounds` array without route/DNS wrapper blocks. |
+| **Clash / Mihomo** | `clash` / `clashmeta` / `meta` / `mihomo` / `yaml` | YAML with `select`, `url-test`, `fallback`, `load-balance`, and `relay` groups. |
+| **Raw URI List** | `raw` / `uri` / `plain` | Unencoded line-by-line URI list (`vless://`, `hy2://`, `tuic://`, `trojan://`, `ss://`, `vmess://`). |
+| **Base64 (default)** | Auto / generic clients | Base64-encoded URI list with `Subscription-Userinfo`, `Profile-Update-Interval`, and Happ routing headers when `happ_routing_enabled` is active. |
+| **SIP008 (Shadowsocks)** | `sip008` | Standard SIP008 JSON profile for Shadowsocks clients. |
+| **OpenWrt Router Config** | `openwrt` / `router` | Ready-to-apply OpenWrt router configuration (`build_openwrt_router_config_with_opts`). |
+| **OpenWrt 1-Click Installer** | `openwrt-install` / `router-install` / `install.sh` | Executable shell script for automated subscription deployment on OpenWrt routers. |
+| **WireGuard / AmneziaWG** | Portal / node export | Ready-to-import `.conf` tunnel profile including `jc`/`jmin`/`jmax`/`s1`/`s2`/`h1..h4`. |
+| **Web Portal** | `html` / `portal` / `page` (or `Accept: text/html`) | User portal displaying traffic quota, device list, QR code, and one-click client import links. |
+
+### Dynamic Subscription Query Parameters
+
+Append filter or routing overrides directly to any subscription URL:
+- `?country=DE,NL` (or `?cc=US`) — limits exported nodes to the comma-separated 2-letter ISO country codes.
+- `?mode=<mode>` — switches generated client routing rules on the fly:
+  - `antiblock` — routes selected international services and platforms through the tunnel while keeping other traffic direct;
+  - `ru-direct` / `split` — keeps regional `.ru` / `.su` / `.рф` and local banking/portal domains direct while proxying everything else;
+  - `gaming` / `game` — prioritizes low-latency interactive and gaming traffic routing;
+  - `full` / `global` — routes all client traffic through the tunnel outbound.
 
 ---
 

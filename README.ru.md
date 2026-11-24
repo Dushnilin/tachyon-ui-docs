@@ -2,22 +2,22 @@
 
 [English](README.md) | **Русский**
 
-Лёгкая, полностью автономная панель управления движком `tachyon-core` на чистом Rust: единый статический бинарник без C-зависимостей и внешнего рантайма, встроенный веб-интерфейс в тёмной инженерной теме Graphite Dark, двухпротокольный HTTP+HTTPS веб-стек, нативный ACME-менеджер, система маскировки под публичный сайт, 4-уровневая защита подписок с Covert Knock, встроенный Telegram-бот с Mini App и полный паритет с балансировщиками и диагностикой `tachyon-core`.
+Лёгкая, полностью автономная панель управления движком `tachyon-core` на чистом Rust: единый статический бинарник без C-зависимостей и внешнего рантайма, встроенный веб-интерфейс с 16 темами (13 тёмных и 3 светлые) и редактором тем, двухпротокольный HTTP+HTTPS веб-стек, нативный ACME-менеджер, система маскировки под публичный сайт, профиль `Unified 443 Front`, 4-уровневая защита подписок с Covert Knock, безопасное автоуправление файрволом, встроенный Telegram-бот с Mini App и полный паритет с балансировками, цепочками, маршрутизацией и диагностикой `tachyon-core`.
 
 ---
 
-## Ключевые возможности (версия `20261123-v20`)
+## Ключевые возможности (версия `v0.4.2`)
 
 | Подсистема | Возможности |
 | :--- | :--- |
-| **Стек без C-зависимостей** | Единый бинарник (`x86_64-unknown-linux-musl`, ~5,5 МБ) со встроенным SPA `src/ui.html`. TLS построен на 100% pure-Rust (`rustls`, `tokio-rustls`, `oxitls-rustcrypto-provider`, без `openssl-sys`/`ring`). |
-| **Dual HTTP + HTTPS и SiteEngine** | Одновременный приём HTTP и HTTPS на одном порту через инспекцию первого байта (`0x16`), поддержка выделенных `:80` + `:443`, горячий ребинд портов и сертификатов. 6 встроенных многостраничных шаблонов сайтов или загрузка собственного `.zip` / HTML. |
-| **Домены, ACME и REALITY Self-Steal** | 4 готовых профиля привязки (`dual_single_port`, `native_80_443`, `reality_self_steal` на `127.0.0.1:8443`, `reverse_proxy` Nginx/Caddy). Выпуск и автопродление ACME HTTP-01 / Cloudflare DNS-01 / SAN Self-Signed. |
-| **Изоляция панели и Self-Audit** | Строгий префикс `web_base_path` (запросы вне пути не раскрывают панель), нейтральные заголовки `nginx/1.26.2`, `sid` cookie, активный Honeypot, автоматический аудит скрытности (0–100 баллов). |
-| **4-уровневые Stealth-подписки и Covert Knock** | Полиморфные URL (`sub`, `static_feed`, `cdn_v2`, `rss_updates`), Zero-Oracle 404 HTML, фильтр автоматических сканеров, Portal Guard (`?k=`) и HMAC-стук (`If-None-Match` / `X-Client-Digest`) поверх обычных маршрутов сайта. |
-| **Балансировщики `tachyon-core`** | Все 12 режимов `urltest`, расширенный объект `balancer` (`pool`, `pool_tolerance`, `sticky_hash`, `quota_mib`, `tiers`), `selector` (`auto_failover`, живое переключение) и многохоповые цепочки `chain` (`strip_evasion`, `strip`, `rewrite`). |
-| **Протоколы и маршрутизация** | VLESS/REALITY, VMess, Trojan, Hysteria/Hy2, TUIC, AnyTLS, Naive, ShadowTLS, WireGuard/AWG (port hopping), MASQUE, MTProto (`telegram-ws`/`kws`), WDTT, Sudoku, Cloudflared, SSH, Tor, Bridge; `time_window`, `rule_set`, `udp_nat_mode`, `smart_queue`. |
-| **Кластер, Telegram-бот и диагностика** | Мультинодовая синхронизация и каскады, встроенный бот с тарифами, ваучерами (`/redeem`) и Mini App, 5-вкладочная живая диагностика ядра, режим скрытия приватных данных (`Alt+P`) и палитра команд (`Ctrl+K`). |
+| **Стек без C-зависимостей и 16 тем** | Единый статический бинарник (`linux-amd64`, `linux-arm64` `musl` и `windows-amd64`) со встроенным адаптивным SPA `src/ui.html`. TLS на 100% pure-Rust (`rustls`, `tokio-rustls`, `oxitls-rustcrypto-provider`, без `openssl-sys`/`ring`). **16 встроенных тем** (13 тёмных + 3 светлые: `Material Light`, `Apple Light`, `Gruvbox Light`) и редактор пользовательских тем. |
+| **Dual HTTP + HTTPS и SiteEngine** | Одновременный приём HTTP и HTTPS на одном порту через инспекцию первого байта (`0x16`), выделенные `:80` + `:443`, горячий ребинд портов/сертификатов и диагностика активных HTTPS-слушателей в карточке TLS. 6 встроенных многостраничных шаблонов сайтов, загрузка `.zip` (до 15 МБ) и активный Honeypot. |
+| **Домены, ACME и Unified 443 Front** | **5 профилей привязки** (`dual_single_port`, `native_80_443`, `reality_self_steal` на `127.0.0.1:8443`, `reverse_proxy` и **`unified_443_front` — NGINX + Core на одном порту `443` TCP/UDP с L7-маршрутизацией, `ssl_preread` для REALITY и loopback masquerade `:18080` для Hysteria2/TUIC**). Нативный ACME HTTP-01 (со встроенным временным слушателем `:80` без Caddy/Nginx), Cloudflare DNS-01 и SAN Self-Signed с автопродлением. |
+| **Файрвол и изоляция панели** | Безопасное автоуправление `UFW` / `firewalld` / `iptables` с меткой `tachyon-ui:managed`, автоочисткой правил удалённых/изменённых инбаундов и защитой ручных правил администратора и SSH (плюс тумблер отключения `auto_firewall_enabled`). Строгий `web_base_path`, нейтральные заголовки `nginx/1.26.2`, `sid` cookie и 9-критериальный Self-Audit (`0–100`). |
+| **4-уровневые Stealth-подписки и Covert Knock** | Полиморфные URL (`sub`, `static_feed`, `cdn_v2`, `rss_updates`), Zero-Oracle 404, фильтр сканеров, Portal Guard (`?k=`), HMAC-стук (`If-None-Match` / `X-Client-Digest` / `?v=`), профили подписок, брендинг портала, HWID/Anti-Share, query-фильтры (`?format=`, `?country=`, `?mode=`) и экспорт в `sing-box`/`tachyon`, `clash`/`mihomo`, `base64`/`raw`, `sip008`, `wg`/`awg`, `openwrt` + 1-клик скрипт. |
+| **Балансировщики `tachyon-core`** | Все 12 режимов `urltest`, объект `balancer` (`pool`, `pool_tolerance`, `sticky_hash`, `quota_mib`, `tiers`), `selector` (`auto_failover`, живое переключение) и многохоповые цепочки `chain` (`strip_evasion`, `strip`, `rewrite`). |
+| **Протоколы, маршрутизация и автоматика** | VLESS/REALITY, VMess, Trojan, Hysteria/Hy2, TUIC, AnyTLS, Naive, ShadowTLS, WireGuard/AWG (Port Hopping), MASQUE, Tewfai, FPTN, TrustTunnel, OpenConnect, Mieru, Snell, MTProto (`telegram-ws`/`kws`), WDTT, Sudoku, Cloudflared, SSH, Tor, Bridge, Desync; группы стран с мгновенной сменой метаданных без перезапуска ядра; списки `.trs`, `time_window`, `udp_nat_mode`, `smart_queue`, SNI-сканер, Auto-Healer, Unlock Probe, Cloudflare DNS Failover, Zero-Traffic Watchdog и Smart Relay Failover. |
+| **Кластер, Telegram-бот и диагностика** | Мультинодовая синхронизация и каскады, встроенный бот с тарифами, промокодами, ваучерами (`/redeem`) и Mini App, 5-вкладочная живая диагностика ядра, нижний **Live Connections Dock** (`Ctrl+\``), режим скрытия приватных данных (`Alt+P`), палитра команд (`Ctrl+K`), быстрая навигация (`Alt+1..8`) и кольцевой буфер откатов (до 10 снапшотов). |
 
 ---
 
@@ -41,7 +41,7 @@ docker run -d --name tachyon-ui --restart unless-stopped \
   tachyon-ui
 ```
 
-Подробнее о флагах установки, сборке `musl` из исходников и CLI-командах (`tachyon-panel info`, `reset-path`, `open-web-ports`) — в [главе 1](docs/ru/01-installation-and-cli.md).
+Подробнее о флагах установки (`PANEL_PORT`, `PUBLIC_IP`, `SERVER_COUNTRY`, `OPEN_WEB_PORTS`), кросс-компиляции `x86_64`/`aarch64` `musl`, автоуправлении файрволом и CLI-командах (`tachyon-panel info`, `reset-pass`, `reset-path`, `open-web-ports`, `tachyon-ui --reset-creds`) — в [главе 1](docs/ru/01-installation-and-cli.md).
 
 ---
 

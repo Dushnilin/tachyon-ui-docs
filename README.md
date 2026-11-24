@@ -2,22 +2,22 @@
 
 **English** | [Русский](README.ru.md)
 
-A lightweight, self-contained control panel for `tachyon-core` written in pure Rust: a single static binary with zero C dependencies or external runtimes, an embedded Graphite Dark single-page UI (`src/ui.html`), a dual-protocol HTTP + HTTPS web server, built-in ACME automation, public website masking (`SiteEngine`), 4-level stealth subscriptions with Covert Knock, a built-in Telegram bot + Mini App, and full parity with `tachyon-core` balancers and runtime diagnostics.
+A lightweight, self-contained control panel for `tachyon-core` written in pure Rust: a single static binary with zero C dependencies or external runtimes, an embedded single-page UI (`src/ui.html`) with 16 built-in themes (13 dark and 3 light) plus a custom theme studio, a dual-protocol HTTP + HTTPS web server, built-in ACME automation, public website masking (`SiteEngine`), a `Unified 443 Front` profile, 4-level stealth subscriptions with Covert Knock, safe automated firewall reconciliation, a built-in Telegram bot + Mini App, and full parity with `tachyon-core` balancers, chains, routing, and runtime diagnostics.
 
 ---
 
-## Key Features (version `20261123-v20`)
+## Key Features (version `v0.4.2`)
 
 | Subsystem | Capabilities |
 | :--- | :--- |
-| **Zero-C Pure Rust Stack** | Single static binary (`x86_64-unknown-linux-musl`, ~5.5 MiB) with embedded SPA. TLS powered 100% by pure Rust (`rustls`, `tokio-rustls`, `oxitls-rustcrypto-provider`, no `openssl-sys` or `ring`). |
-| **Dual HTTP + HTTPS & SiteEngine** | Simultaneous HTTP and HTTPS on a single port via first-byte inspection (`0x16`), optional dedicated `:80` + `:443`, hot port/cert rebinding. 6 built-in multi-page site templates or custom `.zip` / HTML hosting. |
-| **Domains, ACME & REALITY Self-Steal** | 4 binding profiles (`dual_single_port`, `native_80_443`, `reality_self_steal` on `127.0.0.1:8443`, `reverse_proxy` for Nginx/Caddy). ACME HTTP-01, Cloudflare DNS-01, and SAN Self-Signed certificates with 30-day auto-renewal. |
-| **Panel Isolation & Self-Audit** | Strict `web_base_path` prefix (requests outside the path never expose panel routes), neutral `nginx/1.26.2` headers, `sid` cookie, active Honeypot, automated 0–100 Self-Audit scorer. |
-| **4-Level Stealth Subscriptions & Covert Knock** | Polymorphic paths (`sub`, `static_feed`, `cdn_v2`, `rss_updates`), Zero-Oracle 404 HTML, automated scanner filter, Portal Guard (`?k=`), and HMAC knock (`If-None-Match` / `X-Client-Digest`) over normal website routes. |
+| **Zero-C Pure Rust Stack & 16 Themes** | Single static binary (`linux-amd64`, `linux-arm64` `musl`, and `windows-amd64`) with embedded responsive SPA. TLS powered 100% by pure Rust (`rustls`, `tokio-rustls`, `oxitls-rustcrypto-provider`, no `openssl-sys` or `ring`). **16 built-in themes** (13 dark + 3 light: `Material Light`, `Apple Light`, `Gruvbox Light`) and custom theme editor. |
+| **Dual HTTP + HTTPS & SiteEngine** | Simultaneous HTTP and HTTPS on a single port via first-byte inspection (`0x16`), dedicated `:80` + `:443`, hot port/cert rebinding, and clear active HTTPS URL / port conflict diagnostics in the TLS summary. 6 built-in multi-page site templates, custom `.zip` hosting (up to 15 MiB), and active Honeypot. |
+| **Domains, ACME & Unified 443 Front** | **5 binding profiles** (`dual_single_port`, `native_80_443`, `reality_self_steal` on `127.0.0.1:8443`, `reverse_proxy`, and **`unified_443_front` — NGINX + Core on a single port `443` TCP/UDP with hidden L7 paths, REALITY SNI mux, and `:18080` loopback masquerade for Hysteria2/TUIC**). Built-in ACME HTTP-01 (temporary `:80` listener without external Caddy/Nginx), Cloudflare DNS-01, and SAN Self-Signed with 30-day auto-renewal. |
+| **Firewall Automation & Panel Isolation** | Safe `UFW` / `firewalld` / `iptables` management tagged with `tachyon-ui:managed`, automatic rule cleanup when inbounds are deleted/changed, strict protection for manual admin rules and SSH, plus an `auto_firewall_enabled` toggle. Strict `web_base_path` prefix, neutral `nginx/1.26.2` headers, `sid` cookie, and 9-check Self-Audit (`0–100`). |
+| **4-Level Stealth Subscriptions & Covert Knock** | Polymorphic paths (`sub`, `static_feed`, `cdn_v2`, `rss_updates`), Zero-Oracle 404, scanner filter, Portal Guard (`?k=`), HMAC knock (`If-None-Match` / `X-Client-Digest` / `?v=`), subscription profiles, portal branding, HWID/Anti-Share, dynamic query filters (`?format=`, `?country=`, `?mode=`), and export for `sing-box`/`tachyon`, `clash`/`mihomo`, `base64`/`raw`, `sip008`, `wg`/`awg`, `openwrt` + 1-click installer. |
 | **`tachyon-core` Balancers** | All 12 `urltest` modes, full `balancer` object (`pool`, `pool_tolerance`, `sticky_hash`, `quota_mib`, `tiers`), `selector` (`auto_failover`, live member switching), and multi-hop `chain` (`strip_evasion`, `strip`, `rewrite`). |
-| **Protocols & Routing** | VLESS/REALITY, VMess, Trojan, Hysteria/Hy2, TUIC, AnyTLS, Naive, ShadowTLS, WireGuard/AWG (port hopping), MASQUE, MTProto (`telegram-ws`/`kws`), WDTT, Sudoku, Cloudflared, SSH, Tor, Bridge; `time_window`, `rule_set`, `udp_nat_mode`, `smart_queue`. |
-| **Cluster, Telegram Bot & Diagnostics** | Multi-node sync and cascades, built-in shop bot with plans, vouchers (`/redeem`) and Mini App, 5-tab live core diagnostics modal, Privacy Mask (`Alt+P`), and Command Palette (`Ctrl+K`). |
+| **Protocols, Routing & Automation** | VLESS/REALITY, VMess, Trojan, Hysteria/Hy2, TUIC, AnyTLS, Naive, ShadowTLS, WireGuard/AWG (Port Hopping), MASQUE, Tewfai, FPTN, TrustTunnel, OpenConnect, Mieru, Snell, MTProto (`telegram-ws`/`kws`), WDTT, Sudoku, Cloudflared, SSH, Tor, Bridge, Desync; country groups with zero-reload metadata edits & batch country actions; `.trs` lists, `time_window`, `udp_nat_mode`, `smart_queue`, SNI scanner, Auto-Healer, Unlock Probe, Cloudflare DNS Failover, Zero-Traffic Watchdog, and Smart Relay Failover. |
+| **Cluster, Telegram Bot & Diagnostics** | Multi-node sync and cascades, built-in shop bot with plans, promo codes, vouchers (`/redeem`), and Mini App, 5-tab live core diagnostics modal, bottom **Live Connections Dock** (`Ctrl+\``), Privacy Mask (`Alt+P`), Command Palette (`Ctrl+K`), quick view switching (`Alt+1..8`), and 10-revision snapshot rollback ring. |
 
 ---
 
@@ -41,7 +41,7 @@ docker run -d --name tachyon-ui --restart unless-stopped \
   tachyon-ui
 ```
 
-See [Chapter 1](docs/en/01-installation-and-cli.md) for source builds, `x86_64-unknown-linux-musl` cross-compilation, and CLI recovery commands (`tachyon-panel info`, `reset-path`, `open-web-ports`).
+See [Chapter 1](docs/en/01-installation-and-cli.md) for environment flags (`PANEL_PORT`, `PUBLIC_IP`, `SERVER_COUNTRY`, `OPEN_WEB_PORTS`), static `x86_64`/`aarch64` `musl` cross-compilation, automated firewall management, and CLI tools (`tachyon-panel info`, `reset-pass`, `reset-path`, `open-web-ports`, `tachyon-ui --reset-creds`).
 
 ---
 

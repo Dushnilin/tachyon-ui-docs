@@ -72,19 +72,21 @@ Balancer groups are configured in the subscription editor (**Balancers** tab), d
 
 ![Routing Rules and Route Simulator](../images/en/07-routes-simulator.png)
 
-### Rules & Global `route` Options
+### Rules, `.trs` Lists & Per-Client Traffic Policies
 
-- **Rule Matchers**: `inbound`, `auth_user`, `domain_suffix`, `domain_keyword`, `ip_cidr`, `rule_set` (`.trs`/`.json` sets from `tachyon-lists`), `protocol` (`bittorrent`, `quic`, `tls`, `dns`, `ssh`).
+- **Rule Matchers**: `inbound`, `auth_user`, `domain_suffix`, `domain_keyword`, `ip_cidr`, `rule_set` (`mmap`-backed binary `.trs` / `.json` sets from `tachyon-lists`), `protocol` (`bittorrent`, `quic`, `tls`, `dns`, `ssh`).
 - **Time Schedule (`time_window`)**: Restrict rules by day-of-week, time window, and timezone (e.g. `mon-fri 09:00-22:00 Europe/Berlin`), including midnight wrap-around ranges.
 - **Global `route` flags**:
   - `udp_nat_mode`: `""` (default), `fullcone`, `eim_eif`, or `symmetric`;
   - `smart_queue`: interactive packet prioritization and queue shaping.
-- **1-Click `tachyon-lists` Pack**: Install curated binary `.trs` rule-sets via `/api/routes/tachyon-lists-pack`.
+- **1-Click `tachyon-lists` Pack**: Install curated binary `.trs` rule-sets via `/api/routes/tachyon-lists-pack` — also accessible directly from the Dashboard **Routing & `tachyon-lists`** card below Memory.
+- **Traffic Policies & Per-Node Scoping (`POST /api/inbounds/traffic-policy`, `node_rules`)**: Restrict allowed traffic categories on inbounds or subscriptions (`only_this` / `prefer_node`, with server-side enforcement via `server_unmatched`: `block` / `direct` / `client_only`).
+- **3-Column Flow Topology Map & Instant Domain Block**: Visualizes `Inbound → Rule / Balancer → Outbound` chains and lets operators block suspicious domains immediately via `POST /api/core/block-domain`.
 
-### Simulation Modes (`#routes`)
+### 2-Tier Route Simulator & Live Core Tracing (`#routes`)
 
-1. **Config Simulation** (`POST /api/routes/simulate`) — evaluates generated server and client subscription rules offline.
-2. **Test in Live Core** (`POST /api/core/route-check` → `/tachyon/route-check`) — traces the target directly inside the running `tachyon-core` process, returning the matched rule, `effective_outbound`, resolved/FakeIP addresses, and parallel probes (`Routed`, `Direct`, `Proxy`).
+1. **2-Tier Config Simulation** (`POST /api/routes/simulate`) — evaluates both generated server rules and per-subscription client routing rules offline.
+2. **Test in Live Core** (`POST /api/core/route-check` / `POST /api/core/route-domain`) — traces the target directly inside the running `tachyon-core` process, returning the matched rule, `effective_outbound`, resolved/FakeIP addresses, and parallel probes (`Routed`, `Direct`, `Proxy`).
 
 ---
 

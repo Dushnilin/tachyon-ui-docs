@@ -59,7 +59,7 @@ Controls what regular browsers, crawlers, and active probes see on `/`:
 
 ![Wizard Step 2 — Domain Profiles, HTTP/HTTPS and ACME TLS](../images/en/11-wizard-domain-tls.png)
 
-#### 4 Binding Profiles (`web_domain_profile`)
+#### 5 Binding Profiles (`web_domain_profile`)
 
 | Profile | Ports & Architecture | When to Use |
 | :--- | :--- | :--- |
@@ -67,15 +67,36 @@ Controls what regular browsers, crawlers, and active probes see on `/`:
 | **`native_80_443`** | `web_http_port = 80` (ACME HTTP-01 + `301` redirect to HTTPS), `web_https_port = 443` | Standard domain setup on dedicated port `:443` without Nginx/Caddy. |
 | **`reality_self_steal`** | `web_https_bind_addr = 127.0.0.1`, `web_https_port = 8443`, `web_http_port = 80`; external `:443` served by REALITY | Recommended for **REALITY Self-Steal**: REALITY listens on public `:443` and proxies unauthenticated TLS handshakes directly to `127.0.0.1:8443` on `tachyon-ui`. |
 | **`reverse_proxy`** | Panel runs plain `http` on loopback/panel port behind Nginx or Caddy | Co-hosting alongside existing `:80/:443` sites. The wizard generates copy-ready Nginx and Caddy configs. |
+| **`unified_443_front`** | NGINX on `443/tcp` (`ssl_preread` + HTTP/L7), `tachyon-core` on `443/udp` + local `127.0.0.1` inbounds | Consolidates the entire node onto port `443` (`80/tcp` used only for ACME HTTP-01 and redirects). Auto-adapts inbounds and exports complete `nginx.conf` / `Caddyfile`. |
 
-> Clicking **Apply Profile** automatically creates a recovery snapshot (`/api/snapshots`), rebinds listeners live via `ListenerSupervisor`, and (for `reality_self_steal`) updates `handshake.server = "127.0.0.1"` and `handshake.server_port = 8443` on REALITY inbounds.
+> Clicking **Apply Profile** automatically creates a recovery snapshot (`/api/snapshots`) and rebinds listeners live via `ListenerSupervisor`:
+> - For `reality_self_steal`, updates `handshake.server = "127.0.0.1"` and `handshake.server_port = 8443` on REALITY inbounds.
+> - For `unified_443_front`, binds active L7 inbounds (`ws`, `httpupgrade`, `grpc`, `xhttp`/`http`) to `127.0.0.1:10001+` without TLS while exporting `<domain>:443` strict TLS (`external_port` / `external_tls`) to clients, and places the primary UDP inbound (`hysteria2` or `tuic`) on `0.0.0.0:443/udp` with `masquerade: http://127.0.0.1:18080`.
 
-#### TLS Certificates (`cert.pem` and `key.pem` in `<data_dir>`)
+#### `Unified 443 Front (NGINX + Core)` Profile
+
+```mermaid
+flowchart TD
+    EXT["Incoming Public Traffic"] --> TCP443["TCP :443 — NGINX stream (ssl_preread)"]
+    EXT --> UDP443["UDP :443 — tachyon-core (Hysteria2 / TUIC)"]
+    TCP443 -->|"Own domain SNI"| NGINX_HTTP["NGINX HTTP Frontend (127.0.0.1:8443 TLS / raw ClientHello preserved)"]
+    TCP443 -->|"Foreign SNI"| CORE_REALITY["tachyon-core (local REALITY inbound)"]
+    NGINX_HTTP -->|"/"| DECOY["Static Decoy Website"]
+    NGINX_HTTP -->|"/<web_base_path> & /<sub_path>"| PANEL_LOCAL["tachyon-ui (127.0.0.1:listen_port HTTP)"]
+    NGINX_HTTP -->|"/<ws|grpc|xhttp|httpupgrade>"| CORE_L7["tachyon-core L7 (127.0.0.1:10001+ plain)"]
+    UDP443 -->|"HTTP/3 masquerade"| MASQ["NGINX Loopback (:18080 decoy only; /api, /panel, /sub return 404)"]
+```
+
+- The generated `stream { ... }` block deliberately omits `proxy_protocol on;` so `tachyon-core` REALITY receives raw TLS `ClientHello` packets.
+- The wizard provides a one-click `nginx.conf` download and `Caddyfile` snippet via `GET /api/domain/proxy-snippet?profile=unified_443_front`, while adapted inbounds display an `→ :443 TLS` external front badge.
+
+#### TLS Certificates (`cert.pem` and `key.pem` in `<data_dir>`) & Listener Diagnostics
 
 - **SAN Self-Signed** (`POST /api/tls/self-signed`): Issues an X.509 certificate with DNS/IP SAN extensions and hot-reloads `HotCertResolver`.
-- **ACME Let's Encrypt — HTTP-01**: Serves `/.well-known/acme-challenge/<token>` directly from `tachyon-ui` without stopping the panel.
+- **ACME Let's Encrypt — HTTP-01**: Requires no external Caddy or Nginx. When triggered, `tachyon-ui` opens `80/tcp` in the firewall (when `auto_firewall_enabled` is on), binds a temporary HTTP-01 listener on `:80` if needed, and waits for listener readiness before requesting the challenge. Busy-port or host-firewall errors surface clear diagnostic hints.
 - **ACME Let's Encrypt — Cloudflare DNS-01**: Creates and cleans up `_acme-challenge.<domain>` TXT records via Cloudflare API (`cf_api_token` + `cf_zone_id`), ideal when `:80` is closed or `:443` is owned by REALITY.
 - **Auto-Renewal (`acme_auto_renew`)**: Checks certificate expiry (`days_left <= 30`) every 12 hours for eligible public domain names (IP literals and `localhost` are skipped automatically) and hot-swaps renewed certificates.
+- **Listener & Port Diagnostics (`GET /api/tls/status`)**: Clearly separates the primary auto-TLS panel port (`Primary`) from the dedicated `web_https_port` (`HttpsDedicated`), listing live HTTPS URLs and any port bind conflicts or warnings.
 
 ---
 
@@ -97,7 +118,7 @@ Click **Run Self-Audit** (`POST /api/web/self-audit`) to execute **9 automated c
 
 | Check ID | Severity | Verification Criteria | How to Pass |
 | :--- | :--- | :--- | :--- |
-| `tls_active` | critical | `web_tls_mode != "http"`, valid non-expired cert with SAN loaded in `HotCertResolver` | Enable `auto`/`https` and issue an ACME or SAN Self-Signed cert. |
+| `tls_active` | critical | Active built-in TLS (`web_tls_mode != "http"` with valid non-expired SAN cert in `HotCertResolver`) **or** external TLS termination (`reverse_proxy` / `unified_443_front`) with a domain configured | Enable `auto`/`https` and issue a cert, or bind a domain under `reverse_proxy` / `unified_443_front`. |
 | `web_base_path_isolated` | critical | Non-empty secret `web_base_path` configured (not `/`) | Generate a `/p-...` path in Step 3 and bookmark it. |
 | `public_site_clean` | high | Active `SiteEngine` template (or `www/index.html` for `custom_static`); `/` contains zero `window.__PANEL_BASE__` or session markers | Select a template or upload static HTML in Step 1. |
 | `legacy_3xui_disabled` | high | `enable_3xui_compat_api == false` | Keep legacy 3x-ui compatibility routes disabled. |

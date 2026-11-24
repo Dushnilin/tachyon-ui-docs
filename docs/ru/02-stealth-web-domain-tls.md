@@ -59,7 +59,7 @@ flowchart TD
 
 ![Мастер: Шаг 2 — Профили домена, HTTP/HTTPS и ACME TLS](../images/ru/11-wizard-domain-tls.png)
 
-#### 4 профиля привязки (`web_domain_profile`)
+#### 5 профилей привязки (`web_domain_profile`)
 
 | Профиль | Порты и схема | Когда выбирать |
 | :--- | :--- | :--- |
@@ -67,15 +67,36 @@ flowchart TD
 | **`native_80_443`** | `web_http_port = 80` (HTTP-01 ACME + `301` редирект на HTTPS), `web_https_port = 443` | Когда домен смотрит прямо на сервер без внешнего Nginx/Caddy и нужен стандартный HTTPS без указания порта. |
 | **`reality_self_steal`** | `web_https_bind_addr = 127.0.0.1`, `web_https_port = 8443`, `web_http_port = 80`; порт `:443` отдан REALITY | Рекомендуемый вариант для **REALITY Self-Steal**: REALITY слушает внешний `:443`, а при зондировании или обычном HTTPS-запросе перенаправляет TLS-рукопожатие на локальный сайт `127.0.0.1:8443` самого `tachyon-ui`. |
 | **`reverse_proxy`** | Панель в режиме `http` на loopback/порту панели; впереди Nginx или Caddy | Когда на одном сервере уже работают другие веб-проекты на `:80/:443`. Мастер сам генерирует готовые конфиги Nginx и Caddy с кнопкой копирования. |
+| **`unified_443_front`** | Впереди NGINX на `443/tcp` (`ssl_preread` + HTTP/L7), `tachyon-core` на `443/udp` + локальные `127.0.0.1` инбаунды | Максимальная маскировка всей ноды на единственном открытом порту `443` (`80/tcp` используется только для ACME HTTP-01 и редиректа). Мастер автоматически адаптирует инбаунды и генерирует готовый `nginx.conf` / `Caddyfile`. |
 
-> При нажатии **Применить профиль** сервер сначала автоматически создаёт точку восстановления (`/api/snapshots`), обновляет порты через `ListenerSupervisor` без перезапуска процесса и (для `reality_self_steal`) синхронизирует `handshake.server = "127.0.0.1"` и `handshake.server_port = 8443` в REALITY inbound.
+> При нажатии **Применить профиль** сервер сначала автоматически создаёт точку восстановления (`/api/snapshots`) и обновляет порты через `ListenerSupervisor` без перезапуска процесса:
+> - Для `reality_self_steal` синхронизирует `handshake.server = "127.0.0.1"` и `handshake.server_port = 8443` в REALITY inbound.
+> - Для `unified_443_front` переводит активные L7-инбаунды (`ws`, `httpupgrade`, `grpc`, `xhttp`/`http`) на `127.0.0.1:10001+` без TLS с сохранением клиентского экспорта `<domain>:443` + строгий TLS (`external_port` / `external_tls`), а основной UDP-инбаунд (`hysteria2` или `tuic`) — на `0.0.0.0:443/udp` с loopback-маскарадом `http://127.0.0.1:18080`.
 
-#### Сертификаты TLS (`cert.pem` и `key.pem` в `<data_dir>`)
+#### Профиль `Unified 443 Front (NGINX + Core)`
+
+```mermaid
+flowchart TD
+    EXT["Входящий внешний трафик на сервер"] --> TCP443["TCP :443 — NGINX stream (ssl_preread)"]
+    EXT --> UDP443["UDP :443 — tachyon-core (Hysteria2 / TUIC)"]
+    TCP443 -->|"Свой SNI домена"| NGINX_HTTP["NGINX HTTP Frontend (127.0.0.1:8443 TLS / без proxy_protocol в REALITY)"]
+    TCP443 -->|"Сторонний SNI"| CORE_REALITY["tachyon-core (локальный REALITY inbound)"]
+    NGINX_HTTP -->|"/"| DECOY["Публичный сайт-заглушка"]
+    NGINX_HTTP -->|"/<web_base_path> и /<sub_path>"| PANEL_LOCAL["tachyon-ui (127.0.0.1:listen_port HTTP)"]
+    NGINX_HTTP -->|"/<ws|grpc|xhttp|httpupgrade>"| CORE_L7["tachyon-core L7 (127.0.0.1:10001+ без TLS)"]
+    UDP443 -->|"HTTP/3 masquerade"| MASQ["NGINX Loopback (:18080 — только заглушка, админка и /sub/* возвращают 404)"]
+```
+
+- При генерации блока `stream { ... }` в `nginx.conf` намеренно **не** добавляется `proxy_protocol on;`, чтобы `tachyon-core` корректно принимал сырой `ClientHello` для REALITY.
+- В веб-интерфейсе мастера доступна кнопка скачивания готового `nginx.conf` и сниппета `Caddyfile` (`GET /api/domain/proxy-snippet?profile=unified_443_front`), а в таблице инбаундов адаптированные ноды помечаются индикатором внешнего фронта `-> :443 TLS`.
+
+#### Сертификаты TLS (`cert.pem` и `key.pem` в `<data_dir>`) и диагностика портов
 
 - **SAN Self-Signed** (`POST /api/tls/self-signed`): мгновенно выпускает X.509 сертификат с расширениями SAN для домена и/или IPv4/IPv6 и сразу загружает его в `HotCertResolver`.
-- **ACME Let's Encrypt — HTTP-01**: использует встроенный обработчик `/.well-known/acme-challenge/<token>` прямо внутри `tachyon-ui` (при открытом порте `:80` или `listen_port`) и не требует остановки службы.
+- **ACME Let's Encrypt — HTTP-01**: работает без внешнего Caddy или Nginx. При запуске выпуска панель (при включённом `auto_firewall_enabled`) открывает `80/tcp` в системном файрволе, поднимает временный HTTP-01 сервер на `:80` (если `:80` ещё не слушается панелью) и дожидается готовности слушателя перед отправкой запроса ACME. Если порт `80` занят другим процессом или закрыт провайдером, карточка возвращает точную диагностическую подсказку.
 - **ACME Let's Encrypt — Cloudflare DNS-01**: автоматически создаёт и удаляет TXT-запись `_acme-challenge.<domain>` через Cloudflare API (`cf_api_token` + `cf_zone_id`), позволяя получить доверенный сертификат даже при закрытом 80 порту или REALITY на `:443`.
 - **Автопродление (`acme_auto_renew`)**: фоновый цикл раз в 12 часов проверяет срок действия (`days_left <= 30`) для публичных доменных имён (IP-адреса и `localhost` автоматически пропускаются) и обновляет сертификат горячей подменой без обрыва соединений.
+- **Статус слушателей (`GET /api/tls/status`)**: в карточке TLS отдельно отображаются основной порт панели (`Primary`, принимающий HTTPS в режиме `auto`) и выделенный `web_https_port` (`HttpsDedicated`), список актуальных HTTPS URL и явные предупреждения о занятых или конфликтующих портах.
 
 ---
 
@@ -97,7 +118,7 @@ flowchart TD
 
 | ID проверки | Вес / критичность | Что проверяется | Как набрать балл |
 | :--- | :--- | :--- | :--- |
-| `tls_active` | critical | `web_tls_mode != "http"`, сертификат загружен в `HotCertResolver`, не истёк и содержит SAN | Выберите режим `auto`/`https` и выпустите ACME или SAN Self-Signed сертификат. |
+| `tls_active` | critical | Встроенный TLS (`web_tls_mode != "http"` с валидным неистёкшим SAN-сертификатом в `HotCertResolver`) **или** внешний TLS-профиль (`reverse_proxy` / `unified_443_front`) с заданным доменом | Выберите режим `auto`/`https` и выпустите сертификат, либо используйте `reverse_proxy` / `unified_443_front` с доменом. |
 | `web_base_path_isolated` | critical | Задан непустой секретный `web_base_path` (отличный от `/`) | Сгенерируйте `/p-...` на Шаге 3 и сохраните закладку. |
 | `public_site_clean` | high | Настроен шаблон `SiteEngine` (или загружен `www/index.html` для `custom_static`), ответ на `/` не содержит `window.__PANEL_BASE__` или маркеров сессии | Выберите шаблон или загрузите статический сайт на Шаге 1. |
 | `legacy_3xui_disabled` | high | `enable_3xui_compat_api == false` | Оставьте совместимость с 3x-ui API выключенной. |
