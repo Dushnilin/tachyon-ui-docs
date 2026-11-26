@@ -14,9 +14,9 @@
 | **Hysteria2** | QUIC transport with `up_mbps`/`down_mbps`, `salamander`/`gecko` obfuscation, BBR profiles (`standard`/`conservative`/`aggressive`), and `masquerade`. |
 | **TUIC v5** | Congestion control (`bbr`/`cubic`/`new_reno`), `zero_rtt`, and `heartbeat` interval. |
 | **AnyTLS / ShadowTLS v3 / Naive / Mieru / Snell** | Padding schemes (AnyTLS), decoy TLS handshake server (`strict_mode` on ShadowTLS v3), HTTP/3 QUIC (Naive), TCP/UDP mux (Mieru), and Snell v5/v6. |
-| **Tewfai / FPTN / TrustTunnel / OpenConnect** | Native Tewfai (QUIC, FEC, shaper/morph profiles, PQC), native FPTN (IPv4/DNS pools), TrustTunnel QUIC, and OpenConnect (`anyconnect`, `gp`, `pulse`, `fortinet`). |
-| **MASQUE** | HTTP/3 QUIC tunnel (`CONNECT-UDP` / `CONNECT-IP`) with key pairs and custom masking profiles. |
-| **WireGuard / AmneziaWG** | X25519 key generator, AmneziaWG junk packet parameters (`jc`, `jmin`, `jmax`, `s1`, `s2`, `h1..h4`), `.conf` export, and UDP **Port Hopping** (`wg_server_ports`, `wg_hop_interval`, `wg_hop_interval_max`). |
+| **Tewfai / FPTN / TrustTunnel / OpenConnect** | Native Tewfai (QUIC, FEC, shaper/morph profiles, cipher, PQC), native FPTN (IPv4/DNS pools, obfuscation), TrustTunnel QUIC, and OpenConnect (`anyconnect`, `gp`, `pulse`, `fortinet`). |
+| **MASQUE** | HTTP/3 QUIC tunnel (`CONNECT-UDP` / `CONNECT-IP`) with key pairs and custom masking profiles. Exported client profiles automatically set `keep_alive_period: "20s"`, `idle_timeout: "50s"` (below server-side `60s`), and `tls.alpn: ["h3"]`. |
+| **WireGuard / AmneziaWG** | X25519 key generator, AmneziaWG junk packet parameters (`jc`, `jmin`, `jmax`, `s1`, `s2`, `h1..h4`), `.conf` export, automatic allocation of the lowest free `wg_client_ip` (`2..=254`, `10.10.0.<octet>/32`) when creating clients and subscriptions, and UDP **Port Hopping** (`wg_server_ports`, `wg_hop_interval`, `wg_hop_interval_max`). |
 | **WDTT** | Modes `wg`, `raw`, `csqtt`, `csqtt_v1`; media mimicry (`audio`, `video`, `unified`); SRTP modes (`auto`, `dtls`, `wrap`). |
 | **Sudoku** | Shared key, AEAD cipher (`chacha20-poly1305`, etc.), table selection (`prefer_ascii`, custom tables), padding bounds (`padding_min/max`), Pure Downlink, and HTTP mask (`http_mask_mode`, `host`, `path_root`, `multiplex`). |
 | **Cloudflared** | Zero-open-port inbound tunnel via Cloudflare (`cloudflared_token`, `ha_connections`, QUIC/HTTP2 protocol, `post_quantum`, `edge_ip_version`, `region`). |
@@ -50,11 +50,12 @@ In addition to `direct`, `block`, `vless`, `vmess`, `trojan`, `hysteria2`, `tuic
 ![Multi-Node Management and Cascades](../images/en/08-nodes.png)
 
 **Nodes (Locations)** supports three upstream types:
-1. **`tachyon_node`** — pulls subscriptions from another `tachyon-ui` instance using its URL and `remote_sub_id`.
-2. **`sub_url`** — imports external subscription URLs periodically with configurable client headers (`User-Agent`, `x-hwid`, `x-device-os`, `x-device-model`).
-3. **`manual_uris`** — batch-imports URI lists (`vless://`, `hy2://`, `tuic://`, etc.) and clones multi-node sets (`/api/nodes/multi-clone`).
+1. **`tachyon_node`** — pulls subscriptions from another `tachyon-ui` instance using its URL and `remote_sub_id` (always enabled; without an access grant it sends `User-Agent: tachyon-ui/<version>` with no client-spoofing headers).
+2. **`sub_url`** — imports external subscription URLs periodically with configurable client headers (`User-Agent`, `x-hwid`, `x-device-os`, `x-device-model`) *(requires a host-fingerprint access grant `TACHYON-GRANT-V1`)*.
+3. **`manual_uris`** — batch-imports URI lists (`vless://`, `hy2://`, `tuic://`, etc.) and clones multi-node sets (`/api/nodes/multi-clone`) *(importing external lists or cascades requires an active host-fingerprint access grant)*.
 
 - **Smart Relay Auto-Failover & Failback**: Monitors relay health and temporarily reroutes traffic to healthy backups in the same country (`relay_auto_failover`), failing back upon recovery.
+- **Node Health Check & Auto-Clean (`POST /api/nodes/health-check`)**: Probes a single remote node by `id` (or all nodes when `id` is omitted/`0`), with optional `auto_clean: true` to prune unreachable synced nodes and re-apply affected cascades.
 - **Cascade Builder (`/api/cascade/preview`, `/api/cascade`)**: Wires local inbounds to remote relays via `urltest` (12 modes), `selector`, or `chain` with JSON config preview.
 
 ### Built-In Network Tools & Automation
@@ -65,7 +66,7 @@ In addition to `direct`, `block`, `vless`, `vmess`, `trojan`, `hysteria2`, `tuic
 - **Unlock Probe & Regional Connectivity Check (`POST /api/tools/unlock-probe`, `/api/tools/*`)**: Checks streaming/AI service reachability and regional connectivity from the server or selected outbounds.
 - **Cloudflare DNS Failover (`POST /api/tools/cloudflare-dns`)**: Updates Cloudflare A records (`cf_record_name`) and rotates to `cf_backup_ips` automatically on primary node failure.
 - **Zero-Traffic Watchdog**: Alerts administrators if inbound traffic drops unexpectedly to zero while active sessions are expected.
-- **Key & Credential Generators (`/api/generate/*`)**: Generates `uuid`, X25519 `reality-keys`, WireGuard/AWG `wg-keys`, Shadowsocks 2022 `ss-key`, and random passwords.
+- **Key & Credential Generators (`GET /api/generate/*`)**: Generates `GET /api/generate/uuid`, X25519 `GET /api/generate/reality-keys` (plus `short_id`), WireGuard/AWG `GET /api/generate/wg-keys`, Shadowsocks 2022 `GET /api/generate/ss-key`, and random passwords via `GET /api/generate/password`.
 
 ---
 
@@ -87,4 +88,4 @@ Includes an integrated long-polling Telegram bot with zero external Python/Node 
 
 ---
 
-Next: [Chapter 6 — Core Diagnostics, Privacy Mask (`Alt+P`) & REST API Reference](06-diagnostics-privacy-and-api.md).
+[Previous: Chapter 4 — Balancers (12 `urltest` Modes), `chain` Outbounds & Routing](04-balancers-chain-and-routes.md) | [Index](../../README.md) | [Next: Chapter 6 — Core Diagnostics, Privacy Mask (`Alt+P`) & REST API Reference](06-diagnostics-privacy-and-api.md)

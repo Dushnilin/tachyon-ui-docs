@@ -19,13 +19,19 @@ flowchart TD
     ACME -->|"No"| REDIR{"HttpRedirect listener (:80)?"}
     REDIR -->|"Yes"| R301["301 Moved Permanently -> HTTPS"]
     REDIR -->|"No"| SCOPE{"Path inside web_base_path?"}
-    SCOPE -->|"No (root / or isolated /api/*)"| KNOCK{"Valid Covert Knock (HMAC ±300s)?"}
-    SCOPE -->|"Yes (and not ?decoy=1)"| PANEL["Admin Panel SPA + API (sid Cookie / Bearer)"]
-    KNOCK -->|"Valid knock"| SUB_OUT["Serve Subscription"]
+    SCOPE -->|"No (or ?decoy=1)"| KNOCK{"Valid Covert Knock (HMAC ±300s)?"}
+    SCOPE -->|"Yes (and not ?decoy=1)"| ROOT_CHK{"GET / or /index.html?"}
+    ROOT_CHK -->|"No (API / login)"| PANEL["Admin Panel API (sid Cookie / Bearer)"]
+    ROOT_CHK -->|"Yes"| KNOCK_SPA{"Covert Knock first (If-None-Match)?"}
+    KNOCK_SPA -->|"Valid knock"| SUB_OUT["Serve Subscription"]
+    KNOCK_SPA -->|"No"| UI_CACHE["SPA UI_HTML: ETag check -> 304 Not Modified or gzip/raw"]
+    KNOCK -->|"Valid knock"| SUB_OUT
     KNOCK -->|"No"| SUBPATH{"Matches sub_path_style?"}
     SUBPATH -->|"Yes (valid client, non-scanner)"| SUB_OUT
     SUBPATH -->|"No / scanner / invalid id"| SITE["SiteEngine: Public Website (200) or styled 404"]
 ```
+
+> **`Covert Knock` vs. `ETag` Caching Order:** For `GET /` (or `/index.html`) inside `web_base_path` (when `?decoy=1` is not set), the server evaluates `Covert Knock` (`If-None-Match` / `X-Client-Digest` / `?v=`) **strictly before** SPA `ETag` / `304 Not Modified` handling (`serve_cached_ui_asset`), which serves the precompressed `UI_HTML` cache (`~225 KB` gzip vs `~1.05 MB` raw, with `Vary: Accept-Encoding` and `Cache-Control: no-cache`). This guarantees browser conditional-GET caching never interferes with covert knocking.
 
 ---
 
@@ -95,7 +101,7 @@ flowchart TD
 - **SAN Self-Signed** (`POST /api/tls/self-signed`): Issues an X.509 certificate with DNS/IP SAN extensions and hot-reloads `HotCertResolver`.
 - **ACME Let's Encrypt — HTTP-01**: Requires no external Caddy or Nginx. When triggered, `tachyon-ui` opens `80/tcp` in the firewall (when `auto_firewall_enabled` is on), binds a temporary HTTP-01 listener on `:80` if needed, and waits for listener readiness before requesting the challenge. Busy-port or host-firewall errors surface clear diagnostic hints.
 - **ACME Let's Encrypt — Cloudflare DNS-01**: Creates and cleans up `_acme-challenge.<domain>` TXT records via Cloudflare API (`cf_api_token` + `cf_zone_id`), ideal when `:80` is closed or `:443` is owned by REALITY.
-- **Auto-Renewal (`acme_auto_renew`)**: Checks certificate expiry (`days_left <= 30`) every 12 hours for eligible public domain names (IP literals and `localhost` are skipped automatically) and hot-swaps renewed certificates.
+- **Auto-Renewal (`acme_auto_renew`) & X.509 Caching (`read_cert_info_cached`)**: Checks certificate expiry (`days_left <= 30`) every 12 hours for eligible public domain names (IP literals and `localhost` are skipped automatically) and hot-swaps renewed certificates. Parsed X.509 metadata is cached in memory via `read_cert_info_cached` and automatically invalidated by `(mtime, size)` whenever the certificate file is reissued or updated.
 - **Listener & Port Diagnostics (`GET /api/tls/status`)**: Clearly separates the primary auto-TLS panel port (`Primary`) from the dedicated `web_https_port` (`HttpsDedicated`), listing live HTTPS URLs and any port bind conflicts or warnings.
 
 ---
@@ -114,20 +120,20 @@ flowchart TD
 
 ### Step 4: Covert Knock & Self-Audit (`0–100`)
 
-Click **Run Self-Audit** (`POST /api/web/self-audit`) to execute **9 automated checks** (including a live internal `StealthSubGate` probe for a non-existent `sub_id`) yielding a `0–100` score and grade (`A+` to `F`):
+Click **Run Self-Audit** (`POST /api/web/self-audit`) to execute **9 automated checks** (including a live internal `StealthSubGate` probe for a non-existent `sub_id`) yielding a `0–100` score and grade (`A+` to `D`):
 
 | Check ID | Severity | Verification Criteria | How to Pass |
 | :--- | :--- | :--- | :--- |
-| `tls_active` | critical | Active built-in TLS (`web_tls_mode != "http"` with valid non-expired SAN cert in `HotCertResolver`) **or** external TLS termination (`reverse_proxy` / `unified_443_front`) with a domain configured | Enable `auto`/`https` and issue a cert, or bind a domain under `reverse_proxy` / `unified_443_front`. |
-| `web_base_path_isolated` | critical | Non-empty secret `web_base_path` configured (not `/`) | Generate a `/p-...` path in Step 3 and bookmark it. |
-| `public_site_clean` | high | Active `SiteEngine` template (or `www/index.html` for `custom_static`); `/` contains zero `window.__PANEL_BASE__` or session markers | Select a template or upload static HTML in Step 1. |
-| `legacy_3xui_disabled` | high | `enable_3xui_compat_api == false` | Keep legacy 3x-ui compatibility routes disabled. |
-| `covert_knock_enabled` | medium | `covert_knock_enabled == true` | Enable Covert Knock in Step 4. |
-| `scanners_filtered` | medium | `sub_block_scanners == true` | Keep automated scanner filtering enabled in Step 3. |
-| `sub_path_obfuscated` | medium | `sub_path_style != "sub"` (or custom `sub_path`) AND `sub_legacy_alias == false` | Use `cdn_v2` / `static_feed` / `rss_updates` and disable legacy `/sub/`. |
-| `portal_guard_enabled` | low | `sub_portal_guard == "secret_key"` | Require `?k=<portal_key>` for browser portal views. |
-| `zero_oracle_404` | high | Internal non-existent subscription probe returns `404 Not Found` HTML with `Server: nginx/1.26.2` and zero JSON errors | Built-in default on v20. |
+| `tls_active` | `critical` | Active built-in TLS (`web_tls_mode != "http"`) or external TLS profile (`reverse_proxy` / `unified_443_front`) with a non-`localhost` domain, plus a valid non-expired SAN cert in `HotCertResolver` | Enable `auto`/`https` and issue a SAN cert, or bind a domain under `reverse_proxy` / `unified_443_front` with a valid SAN cert. |
+| `web_base_path_isolated` | `critical` | Non-empty secret `web_base_path` configured (not `/`) | Generate a prefix (e.g. `/p-...`) in Step 3 and bookmark it. |
+| `public_site_active` | `high` | Active `SiteEngine` template (or `www/index.html` for `custom_static`); `/` contains zero `window.__PANEL_BASE__` or `tachyon_session` markers | Select a template or upload static HTML in Step 1. |
+| `compat_3xui_disabled` | `high` | `enable_3xui_compat_api == false` | Keep `/panel/api/inbounds/*` compatibility routes disabled. |
+| `covert_knock_enabled` | `medium` | `covert_knock_enabled == true` | Enable Covert Knock in Step 4. |
+| `sub_block_scanners` | `high` | `sub_block_scanners == true` | Keep automated scanner filtering enabled in Step 3. |
+| `sub_path_obfuscated` | `high` | `sub_path_style != "sub"` (or custom `sub_path`) AND `sub_legacy_alias == false` | Use `static_feed` / `cdn_v2` / `rss_updates` (or a custom path) and disable legacy `/sub/`. |
+| `sub_portal_guard_secret` | `high` | `sub_portal_guard == "secret_key"` | Require `?k=<portal_key>` (or Telegram WebApp) for browser portal views. |
+| `zero_oracle_neutral_headers` | `critical` | Internal `StealthSubGate` probe for a non-existent subscription returns `ServeDecoy404` HTML `404 Not Found` with `Server: nginx/1.26.2` and zero JSON errors | Built-in default when neutral HTTP headers are preserved. |
 
 ---
 
-Next: [Chapter 3 — Subscriptions, Web Portal, Vouchers & Tachyon Covert Knock](03-subscriptions-and-covert-knock.md).
+[Previous: Chapter 1 — Installation, Docker, Source Build & CLI](01-installation-and-cli.md) | [Back to Index](../../README.md) | [Next: Chapter 3 — Subscriptions, Web Portal, Vouchers & Tachyon Covert Knock](03-subscriptions-and-covert-knock.md)

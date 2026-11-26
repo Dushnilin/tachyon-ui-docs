@@ -33,13 +33,13 @@ Balancer groups are configured in the subscription editor (**Balancers** tab), d
 
 - **Top-level `urltest` fields**:
   - `url` — probe endpoint (defaults to `https://www.gstatic.com/generate_204`);
-  - `interval` (`interval_secs`) — probe interval (e.g. `180s`);
-  - `tolerance` (`tolerance_ms`) — hysteresis threshold in ms to prevent flapping;
+  - `interval` (`interval_secs`) — probe interval (defaults to `300s`, e.g. `180s`);
+  - `tolerance` (`tolerance_ms`) — hysteresis threshold in ms (defaults to `50`) to prevent flapping;
   - `idle_timeout` — pause background probes after idle duration (e.g. `5m`);
   - `interrupt_exist_connections` — close active flows when switching outbounds.
-- **Nested `balancer` object** (omitted when empty, serialized only when at least one option is configured):
+- **Nested `balancer` object** (omitted when empty or for modes without balancer options; serialized only when at least one option is configured):
   - `pool` — active pool size of top members;
-  - `pool_tolerance` — RTT spread tolerance (ms) inside the pool;
+  - `pool_tolerance` — RTT spread tolerance (ms, capped at `15000`) inside the pool;
   - `sticky_hash` — affinity keys for `sticky` mode (`source_ip`, `domain`, `dest_ip`, `dest_port`, `process`, `none`);
   - `quota_mib` — per-member quota in MiB for `quota` mode;
   - `tiers` — ordered tag arrays (`Vec<Vec<String>>`) for `priority` mode via the visual Tier editor.
@@ -62,8 +62,12 @@ Balancer groups are configured in the subscription editor (**Balancers** tab), d
 
 - `outbounds` — ordered hop list (`len >= 2`);
 - `idle_timeout` and `interrupt_exist_connections`;
-- `strip_evasion` — strip evasion layers between inner hops;
-- `strip` — granular per-feature toggles (`multiplex.padding`, `tls.fragment`, `tls.utls`, `xhttp.padding`);
+- `strip_evasion` — strip extra masking layers between inner hops;
+- `strip` — granular per-feature toggles on inner chain hops:
+  - `multiplex.padding`
+  - `tls.fragment`
+  - `tls.utls`
+  - `xhttp.padding`
 - `rewrite` — optional JSON header/protocol rewrite object.
 
 ---
@@ -78,16 +82,17 @@ Balancer groups are configured in the subscription editor (**Balancers** tab), d
 - **Time Schedule (`time_window`)**: Restrict rules by day-of-week, time window, and timezone (e.g. `mon-fri 09:00-22:00 Europe/Berlin`), including midnight wrap-around ranges.
 - **Global `route` flags**:
   - `udp_nat_mode`: `""` (default), `fullcone`, `eim_eif`, or `symmetric`;
-  - `smart_queue`: interactive packet prioritization and queue shaping.
-- **1-Click `tachyon-lists` Pack**: Install curated binary `.trs` rule-sets via `/api/routes/tachyon-lists-pack` — also accessible directly from the Dashboard **Routing & `tachyon-lists`** card below Memory.
-- **Traffic Policies & Per-Node Scoping (`POST /api/inbounds/traffic-policy`, `node_rules`)**: Restrict allowed traffic categories on inbounds or subscriptions (`only_this` / `prefer_node`, with server-side enforcement via `server_unmatched`: `block` / `direct` / `client_only`).
+  - `smart_queue`: interactive packet prioritization and queue shaping (Bufferbloat control).
+- **1-Click `tachyon-lists` Pack**: Install curated binary `.trs` rule-sets (YouTube, Discord, AI, streaming, social platforms, regional subnets) via `/api/routes/tachyon-lists-pack` — also accessible directly from the Dashboard **Routing & `tachyon-lists`** card below Memory.
+- **Traffic Policies & Per-Node Scoping (`POST /api/inbounds/traffic-policy`, `node_rules`)**: Restrict allowed traffic categories (`rule_sets`, `traffic_types`, `custom_domains`, `custom_ports`) on inbounds or subscriptions (`only_this` — allow only selected categories/ports, `prefer_node` — prefer this node, with server-side enforcement via `server_unmatched`: `block` / `direct` / `client_only`).
 - **3-Column Flow Topology Map & Instant Domain Block**: Visualizes `Inbound → Rule / Balancer → Outbound` chains and lets operators block suspicious domains immediately via `POST /api/core/block-domain`.
 
 ### 2-Tier Route Simulator & Live Core Tracing (`#routes`)
 
+At the top of **Routes**, two tracing modes evaluate any target (domain, IPv4, or protocol):
 1. **2-Tier Config Simulation** (`POST /api/routes/simulate`) — evaluates both generated server rules and per-subscription client routing rules offline.
 2. **Test in Live Core** (`POST /api/core/route-check` / `POST /api/core/route-domain`) — traces the target directly inside the running `tachyon-core` process, returning the matched rule, `effective_outbound`, resolved/FakeIP addresses, and parallel probes (`Routed`, `Direct`, `Proxy`).
 
 ---
 
-Next: [Chapter 5 — Protocols, Multi-Node Clusters, Cascades & Telegram Bot](05-protocols-nodes-and-tgbot.md).
+[Previous: Chapter 3 — Subscriptions, Web Portal, Vouchers & Tachyon Covert Knock](03-subscriptions-and-covert-knock.md) | [Index](../../README.md) | [Next: Chapter 5 — Protocols, Multi-Node Clusters, Cascades & Telegram Bot](05-protocols-nodes-and-tgbot.md)

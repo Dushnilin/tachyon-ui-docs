@@ -12,7 +12,8 @@ The **Subscriptions** module consolidates all user protocols and endpoints into 
 
 - **Grouping by `sub_id`**: Clients sharing the same `sub_id` across different inbound protocols (VLESS+REALITY, Hysteria2, TUIC, WireGuard/AWG, Sudoku, WDTT) are bundled into one subscription.
 - **Subscription Profiles (`/api/sub-profiles`) & Quick Invite (`/api/subs/quick-invite`)**: Reusable presets (device limit, On-Hold `start_on_first_use`, `daily`/`weekly`/`monthly` traffic reset, balancer sets, `announce` banner) applied in one click or used for instant test/VIP invite generation.
-- **360-Degree Inspector, Batch Actions & External Import**: Right-side subscription inspector drawer, batch operations (`/api/subs/batch-action` to enable/disable, extend days, or apply profiles), token rotation (`/api/subs/rotate-token`), strike clearing (`/api/subs/clear-strikes`), request header inspector (`/api/subs/inspect-headers`), and external subscription imports (`/api/subs/import-external`).
+- **360-Degree Inspector, Batch Actions & External Import**: Right-side subscription inspector drawer, batch operations (`/api/subs/batch-action` to enable/disable, extend days, or apply profiles), token rotation (`/api/subs/rotate-token`), strike clearing (`/api/subs/clear-strikes`), request header inspector (`/api/subs/inspect-headers`), and external subscription imports (`/api/subs/import-external`, unlocked via a host-fingerprint access grant).
+- **Host-Fingerprint Access Grant for External Subscriptions (`TACHYON-GRANT-V1`)**: Without an author-signed ECDSA P-256 token bound to the server's `TH-...` fingerprint (activated under **Settings → Host-Fingerprint Access Grant**), importing third-party `sub_url` subscriptions, `external_nodes`, `manual_uris`, and client-emulation headers (`User-Agent` / `x-hwid`) returns `403 grant_required` and is excluded from client exports and background sync; local inbounds and own `tachyon_node` servers work unrestricted (and an active grant removes multi-subscription limits).
 - **HWID Device Limits**:
   - `device_limit` caps bound devices / concurrent IPs; `strict_hwid` enforces an `x-hwid` header.
   - Clients can self-unbind old devices via the portal (`POST <sub_path>/unbind-device`), governed by `sub_unbind_cooldown_hours`.
@@ -20,6 +21,18 @@ The **Subscriptions** module consolidates all user protocols and endpoints into 
 - **Custom Entry Hosts (`hosts`), External Front & `node_rules`**: Override public host/port/SNI/Host header for CDN or transit relays (while `unified_443_front` automatically exports localhost L7 nodes as `<domain>:443` with strict TLS and zero `insecure` flags), and restrict specific nodes to chosen `.trs` rule-sets or traffic classes (`only_this` / `prefer_node`, enforced server-side via `server_unmatched`: `block` / `direct` / `client_only`).
 - **Web Portal Branding & Customization**: Configure layout (`sub_page_layout`), accent color (`sub_theme_accent`), logo URL (`sub_logo_url`), announcement text (`sub_announce`), support/buy/channel links (`sub_support_url`, `sub_buy_url`, `sub_buy_label`, `sub_tg_channel_url`), node list/FAQ/donation toggles (`sub_show_nodes`, `sub_show_faq`, `sub_show_donate`), allowed client app buttons (`sub_enabled_apps`), client DNS & ad-blocking (`sub_client_dns`, `sub_client_block_ads`), plus custom CSS/HTML (`sub_custom_css`, `sub_custom_html`).
 - **Vouchers (`/redeem`)**: Batch-generate redemption codes (`/api/vouchers/batch`) that users exchange for active subscriptions at `/redeem` or a custom `redeem_path`.
+
+### Multi-Subscription Accounting, Online Tracking & In-Place `sub_id` Rename
+
+- **Automatic Client Name Disambiguation (`core_user_name_for_client` / `InboundUserNameResolver`)**: When multiple clients on the same inbound share a `name` (or leave it blank), `core_user_name_for_client` and the O(C)-setup `InboundUserNameResolver` deterministically format their core tags as `name [sub_id]` (or `sub_id` when `name` is empty, falling back to `name [id]` / `client [id]` if `(name, sub_id)` also collides) while leaving unique names unchanged. This guarantees isolated per-subscription traffic accounting and online tracking on shared inbounds.
+- **Accurate Online IP Tracking & Strict Single-Client Fallback**:
+  - `LiveTelemetry` maintains separate active IP maps per core user (`user_online_ips`) and per subscription (`sub_online_ips`, up to 64 IPs per entry).
+  - **Strict Single-Client Fallback (`single_fallback_client_user`)**: Inbound-level traffic and connection stats lacking a per-user tag are attributed only when the inbound has **strictly one** effectively active client; whenever two or more (or zero) active clients exist, inbound-level stats are never misattributed to the first client.
+  - **Immediate Pruning & Dashboard Cap**: Disabled, quota-exceeded, and expired clients are immediately evicted from `user_online_ips` and `recent_online` (only active clients retain a 60-second online grace window). The dashboard online clients widget displays up to **20** active clients with live IPs, connection counts, and one-click `/tachyon/kick`.
+- **Atomic In-Place `sub_id` Rename, Quotas, Periodic Reset & `wg_client_ip` Allocation**:
+  - **In-Place `sub_id` Rename**: Supported in the subscription editor UI and via `POST /api/subs` with `old_sub_id` alongside the target `sub_id`. Atomically updates `sub_configs`, `inbounds[].clients`, `tg_bot.users`, `tg_bot.trial_template_sub_id`, and `remote_nodes[].cascade_sub_id` while preserving UUIDs and keys; returns **`409 Conflict`** if the target `sub_id` already exists.
+  - **Traffic Quota & Periodic Reset**: `total_limit_bytes` (also accepted via the `traffic_limit_bytes` alias) sets the subscription byte cap across assigned clients, and `traffic_reset_strategy` (`none`, `daily`, `weekly`, `monthly`) automatically resets `up`/`down` counters on schedule (triggering a core reload if a previously quota-exceeded client becomes active again).
+  - **Automatic `wg_client_ip` Allocation**: When assigning a subscription to WireGuard, AmneziaWG, or MASQUE inbounds via `POST /api/subs`, the panel selects the lowest unused host octet in `2..=254` (`10.10.0.<octet>/32`), preventing IP collisions after client deletions.
 
 ---
 
@@ -29,13 +42,13 @@ A single subscription endpoint adapts automatically via `User-Agent`, or explici
 
 | Output Format | Query `?format=` | Notes |
 | :--- | :--- | :--- |
-| **`tachyon-core` / `sing-box`** | `singbox` / `sing-box` / `tachyon` / `json` | Full JSON profile including all 12 `urltest` modes, `balancer`, `chain`, `time_window`, `.trs` rules, and native protocols. |
+| **`tachyon-core` / `sing-box`** | `singbox` / `sing-box` / `tachyon` / `json` | Full JSON profile including all 12 `urltest` modes, `balancer`, `chain`, `time_window`, `.trs` rules, and native protocols. Exported `masque` outbounds (with TLS enabled) automatically set `keep_alive_period: "20s"`, `idle_timeout: "50s"`, and `tls.alpn: ["h3"]`. |
 | **JSON Outbounds Only** | `outbounds` | Returns only the JSON `outbounds` array without route/DNS wrapper blocks. |
 | **Clash / Mihomo** | `clash` / `clashmeta` / `meta` / `mihomo` / `yaml` | YAML with `select`, `url-test`, `fallback`, `load-balance`, and `relay` groups. |
 | **Raw URI List** | `raw` / `uri` / `plain` | Unencoded line-by-line URI list (`vless://`, `hy2://`, `tuic://`, `trojan://`, `ss://`, `vmess://`). |
 | **Base64 (default)** | Auto / generic clients | Base64-encoded URI list with `Subscription-Userinfo`, `Profile-Update-Interval`, and Happ routing headers when `happ_routing_enabled` is active. |
 | **SIP008 (Shadowsocks)** | `sip008` | Standard SIP008 JSON profile for Shadowsocks clients. |
-| **OpenWrt Router Config** | `openwrt` / `router` | Ready-to-apply OpenWrt router configuration (`build_openwrt_router_config_with_opts`). |
+| **OpenWrt Router Config** | `openwrt` / `router` | Ready-to-apply OpenWrt router configuration (`build_openwrt_router_config_with_opts`); automatically configures `masque` outbounds with `keep_alive_period: "20s"`, `idle_timeout: "50s"`, and `tls.alpn: ["h3"]` for stable router tunnels. |
 | **OpenWrt 1-Click Installer** | `openwrt-install` / `router-install` / `install.sh` | Executable shell script for automated subscription deployment on OpenWrt routers. |
 | **WireGuard / AmneziaWG** | Portal / node export | Ready-to-import `.conf` tunnel profile including `jc`/`jmin`/`jmax`/`s1`/`s2`/`h1..h4`. |
 | **Web Portal** | `html` / `portal` / `page` (or `Accept: text/html`) | User portal displaying traffic quota, device list, QR code, and one-click client import links. |
@@ -106,4 +119,4 @@ curl -s -A "Happ/2.5.0" \
 
 ---
 
-Next: [Chapter 4 — Balancers (12 `urltest` Modes), `chain` Outbounds & Routing](04-balancers-chain-and-routes.md).
+[Previous: Chapter 2 — Public Website, Dual HTTP+HTTPS, Domain Profiles, ACME & Self-Audit](02-stealth-web-domain-tls.md) | [Index](../../README.md) | [Next: Chapter 4 — Balancers (12 `urltest` Modes), `chain` Outbounds & Routing](04-balancers-chain-and-routes.md)
