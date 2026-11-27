@@ -82,11 +82,9 @@ TACHYON_ADMIN_USER=admin TACHYON_ADMIN_PASS='StrongPass123!' ./tachyon-ui /opt/t
 
 # Print the server Host Fingerprint used to request an access grant
 ./tachyon-ui /opt/tachyon-ui/data --host-fp
-
-# For build maintainers: generate an offline ECDSA P-256 keypair and sign a host-bound grant
-./tachyon-ui --gen-grant-key ~/.tachyon-author/grant-signing-key.pem
-./tachyon-ui --sign-grant --key ~/.tachyon-author/grant-signing-key.pem --host TH-XXXXXXXX-XXXXXXXX-XXXXXXXX --to operator-1 --days 90
 ```
+
+> To obtain a host-bound access grant, contact the developer directly.
 
 Environment variables supported by `--reset-creds` (`src/main.rs`):
 

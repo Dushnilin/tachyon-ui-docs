@@ -82,11 +82,9 @@ TACHYON_ADMIN_USER=admin TACHYON_ADMIN_PASS='StrongPass123!' ./tachyon-ui /opt/t
 
 # Показать отпечаток хоста (Host Fingerprint) для получения ключа доступа
 ./tachyon-ui /opt/tachyon-ui/data --host-fp
-
-# Для автора сборки: генерация оффлайн пары ключей ECDSA P-256 и подпись гранта
-./tachyon-ui --gen-grant-key ~/.tachyon-author/grant-signing-key.pem
-./tachyon-ui --sign-grant --key ~/.tachyon-author/grant-signing-key.pem --host TH-XXXXXXXX-XXXXXXXX-XXXXXXXX --to operator-1 --days 90
 ```
+
+> Для получения ключа доступа (гранта) по отпечатку хоста свяжитесь лично с разработчиком.
 
 Переменные окружения, поддерживаемые флагом `--reset-creds` (`src/main.rs`):
 
