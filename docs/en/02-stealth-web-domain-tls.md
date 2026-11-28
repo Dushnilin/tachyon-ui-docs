@@ -1,8 +1,10 @@
 # 2. Public Website, Dual HTTP+HTTPS, Domain Profiles, ACME & Self-Audit
 
-[Русская версия](../ru/02-stealth-web-domain-tls.md) | [Back to Index](../../README.md)
+[Русская версия](../ru/02-stealth-web-domain-tls.md) | [Complete Guide](00-complete-guide.md) | [Every Tab & Button UI Guide](11-ui-every-tab-and-button-guide.md) | [27-Protocol Catalog](protocols/README.md) | [Back to Index](../../README.md)
 
-Starting with **v20**, `tachyon-ui` presents a full multi-page public website on its web port and natively terminates both HTTP and HTTPS without requiring an external reverse proxy (while also offering one-click Nginx/Caddy integration when shared hosting is needed).
+`tachyon-ui` presents a full multi-page public website on its web port and natively terminates both HTTP and HTTPS without requiring an external reverse proxy (while also offering one-click Nginx/Caddy integration via `reverse_proxy` or `unified_443_front`).
+
+![Sign-In Gate Behind Public Website](../images/en/01-login.png)
 
 ---
 
@@ -19,7 +21,7 @@ flowchart TD
     ACME -->|"No"| REDIR{"HttpRedirect listener (:80)?"}
     REDIR -->|"Yes"| R301["301 Moved Permanently -> HTTPS"]
     REDIR -->|"No"| SCOPE{"Path inside web_base_path?"}
-    SCOPE -->|"No (or ?decoy=1)"| KNOCK{"Valid Covert Knock (HMAC ±300s)?"}
+    SCOPE -->|"No (or ?decoy=1)"| KNOCK{"Valid Covert Knock (HMAC ±300s / Permanent)?"}
     SCOPE -->|"Yes (and not ?decoy=1)"| ROOT_CHK{"GET / or /index.html?"}
     ROOT_CHK -->|"No (API / login)"| PANEL["Admin Panel API (sid Cookie / Bearer)"]
     ROOT_CHK -->|"Yes"| KNOCK_SPA{"Covert Knock first (If-None-Match)?"}
@@ -35,13 +37,13 @@ flowchart TD
 
 ---
 
-## Site, Domain, HTTP/HTTPS & Defense Wizard
+## Masking Wizard: Site, Domain, HTTP/HTTPS & Defense
 
-Open **Settings → Site, Domain, HTTP/HTTPS & Defense (Setup Wizard)** to configure all four layers step by step.
+Open **Settings → Site, Domain, HTTP/HTTPS & Defense (Masking Wizard)** to configure all four layers step by step.
 
-### Step 1: Public Website (`SiteEngine`)
+### Step 1: Public Website (`SiteEngine`) & Honeypot
 
-![Wizard Step 1 — Public Website and Live Preview](../images/en/10-wizard-site.png)
+![Masking Wizard Step 1 — Public Website and Live Preview](../images/en/27-wizard-site-masking.png)
 
 Controls what regular browsers, crawlers, and active probes see on `/`:
 
@@ -59,13 +61,21 @@ Controls what regular browsers, crawlers, and active probes see on `/`:
 - **Live Preview**: An embedded `<iframe>` loads `${BASE}/api/site/preview` across `/`, `/about`, `/status`, and `/docs` without leaking admin cookies.
 - **Active Honeypot**: Logs scanner probes hitting paths like `/.env`, `/wp-admin`, or `/phpmyadmin`, with optional IP auto-banning.
 
+| Step 1 Control | Action / API | Purpose |
+| :--- | :--- | :--- |
+| **Site Mode & Template Selector** | `GET /api/site/info`, `PUT /api/settings` | Switches between `blank_nginx`, `cloud_docs`, `status_page`, `devops_blog`, `corporate_it`, `maintenance`, and `custom_static`. |
+| **Custom HTML Editor** | `GET/PUT /api/site/index` | Reads or saves `<data_dir>/www/index.html` inline when using a custom site. |
+| **Upload ZIP Archive / Reset Site** | `POST /api/site/upload-zip`, `DELETE /api/site/custom` | Safely extracts a custom static site archive (up to 15 MiB) or clears `<data_dir>/www/`. |
+| **Live Preview Frame** | `GET /api/site/preview` | Inspects `/`, `/about`, `/status`, and `/docs` without leaking admin cookies. |
+| **Honeypot Log & Clear Button** | `GET /api/security/honeypot`, `POST /api/security/clear-honeypot` | Reviews captured scanner hits and clears the trap log. |
+
 ---
 
-### Step 2: Domain, HTTP/HTTPS & TLS Certificates
+### Step 2: Domain, HTTP/HTTPS, 5 Binding Profiles & `Unified 443 Front`
 
-![Wizard Step 2 — Domain Profiles, HTTP/HTTPS and ACME TLS](../images/en/11-wizard-domain-tls.png)
+![Masking Wizard Step 2 — Domain Profiles and Unified 443 Front](../images/en/28-wizard-domain-unified443.png)
 
-#### 5 Binding Profiles (`web_domain_profile`)
+#### All 5 Domain Binding Profiles (`web_domain_profile`)
 
 | Profile | Ports & Architecture | When to Use |
 | :--- | :--- | :--- |
@@ -77,9 +87,9 @@ Controls what regular browsers, crawlers, and active probes see on `/`:
 
 > Clicking **Apply Profile** automatically creates a recovery snapshot (`/api/snapshots`) and rebinds listeners live via `ListenerSupervisor`:
 > - For `reality_self_steal`, updates `handshake.server = "127.0.0.1"` and `handshake.server_port = 8443` on REALITY inbounds.
-> - For `unified_443_front`, binds active L7 inbounds (`ws`, `httpupgrade`, `grpc`, `xhttp`/`http`) to `127.0.0.1:10001+` without TLS while exporting `<domain>:443` strict TLS (`external_port` / `external_tls`) to clients, and places the primary UDP inbound (`hysteria2` or `tuic`) on `0.0.0.0:443/udp` with `masquerade: http://127.0.0.1:18080`.
+> - For `unified_443_front`, binds active L7 inbounds (`ws`, `httpupgrade`, `grpc`, `xhttp`/`http`) to `127.0.0.1:10001+` without TLS while exporting `panel.example.com:443` strict TLS (`external_port` / `external_tls`) to clients, and places the primary UDP inbound (`hysteria2` or `tuic`) on `0.0.0.0:443/udp` with `masquerade: http://127.0.0.1:18080`.
 
-#### `Unified 443 Front (NGINX + Core)` Profile
+#### `Unified 443 Front (NGINX + Core)` Architecture & Limitations
 
 ```mermaid
 flowchart TD
@@ -93,8 +103,12 @@ flowchart TD
     UDP443 -->|"HTTP/3 masquerade"| MASQ["NGINX Loopback (:18080 decoy only; /api, /panel, /sub return 404)"]
 ```
 
-- The generated `stream { ... }` block deliberately omits `proxy_protocol on;` so `tachyon-core` REALITY receives raw TLS `ClientHello` packets.
-- The wizard provides a one-click `nginx.conf` download and `Caddyfile` snippet via `GET /api/domain/proxy-snippet?profile=unified_443_front`, while adapted inbounds display an `→ :443 TLS` external front badge.
+- **No `proxy_protocol on;` in `stream { ... }`**: The generated NGINX `stream` block deliberately omits `proxy_protocol on;` so `tachyon-core` REALITY receives raw TLS `ClientHello` packets.
+- **Consequence of omitting `proxy_protocol` (IP Visibility, Anti-Share & SmartDNS)**: Because NGINX forwards local HTTP traffic without `proxy_protocol`, requests arriving through `:443` appear to `tachyon-ui` from `127.0.0.1` unless standard `X-Real-IP` / `X-Forwarded-For` headers are evaluated by HTTP routes. Specifically:
+  - **SmartDNS `/dns-bind/<token>` & DoH IP-binding**: Always open `/dns-bind/<token>` via the **direct panel port** (e.g., `https://panel.example.com:2053/dns-bind/<token>`) or add your external IP manually in `#smartdns` if NGINX passes `127.0.0.1`.
+  - **SmartDNS SNI Proxy `:443/:80` Port Conflict**: Since `Unified 443 Front` owns public `:443/tcp` (`ssl_preread`), do not run the built-in SmartDNS SNI Proxy on `:443` of the same host—run SmartDNS SNI Proxy on a dedicated VPS or use UDP/TCP `:53`, DoT `:853`, and DoH on the panel port.
+  - **IP Accounting without `X-HWID`**: Clients without an `X-HWID` header hitting `:443` share reduced IP-level Anti-Share visibility compared to direct ports; enable `strict_hwid` on subscriptions when operating behind `Unified 443 Front`.
+- **NGINX Version & One-Click Export**: When applying `unified_443_front` directly to NGINX, `tachyon-ui` detects `nginx -v` (`listen ... ssl http2;` for `< 1.25.1` vs `http2 on;` for `>= 1.25.1`), matches the OS worker `user`, deduplicates `:18080` `location` blocks, runs `nginx -t`, and rolls back automatically on error. Adapted L7 inbounds display an `→ :443 TLS` badge.
 
 #### TLS Certificates (`cert.pem` and `key.pem` in `<data_dir>`) & Listener Diagnostics
 
@@ -104,11 +118,21 @@ flowchart TD
 - **Auto-Renewal (`acme_auto_renew`) & X.509 Caching (`read_cert_info_cached`)**: Checks certificate expiry (`days_left <= 30`) every 12 hours for eligible public domain names (IP literals and `localhost` are skipped automatically) and hot-swaps renewed certificates. Parsed X.509 metadata is cached in memory via `read_cert_info_cached` and automatically invalidated by `(mtime, size)` whenever the certificate file is reissued or updated.
 - **Listener & Port Diagnostics (`GET /api/tls/status`)**: Clearly separates the primary auto-TLS panel port (`Primary`) from the dedicated `web_https_port` (`HttpsDedicated`), listing live HTTPS URLs and any port bind conflicts or warnings.
 
+| Step 2 Control | Action / API | Purpose |
+| :--- | :--- | :--- |
+| **Domain & Binding Profile Selector** | `POST /api/domain/apply-profile` | Selects `dual_single_port`, `native_80_443`, `reality_self_steal`, `reverse_proxy`, or `unified_443_front`, saves a recovery snapshot, and adapts listeners. |
+| **Apply NGINX / Get Proxy Snippet** | `POST /api/domain/apply-nginx`, `GET /api/domain/proxy-snippet` | Validates (`nginx -t`), deduplicates `:18080` masquerade blocks, and deploys or exports NGINX / Caddy configs. |
+| **Issue Let's Encrypt ACME TLS** | `POST /api/tls/issue-acme` | Runs HTTP-01 (temporary `:80` listener) or Cloudflare DNS-01 issuance and reloads `HotCertResolver`. |
+| **Issue Self-Signed TLS** | `POST /api/tls/self-signed` | Generates a SAN X.509 certificate for IP or domain fallback. |
+| **TLS Status & Listener Summary** | `GET /api/tls/status` | Displays certificate expiry (`read_cert_info_cached`), SANs, active HTTPS URLs, and port bind warnings. |
+
+> **Protocol TLS & Certificate Requirements:** When consolidating onto `:443` with `Unified 443 Front` or configuring per-inbound certificates, check protocol-specific rules in the [27-Protocol Catalog](protocols/README.md) (for example, strict CA certificate SNI matching on [10. NaiveProxy](protocols/10-naive.md) and [11. MASQUE](protocols/11-masque.md), `quic.tls` export on [01. TewFai](protocols/01-tewfai.md), and raw `ClientHello` REALITY routing on [02. VLESS](protocols/02-vless.md) and [03. Hysteria2](protocols/03-hysteria2.md)).
+
 ---
 
-### Step 3: Panel Path Isolation & Stealth Defaults
+### Step 3: Panel Path Isolation & Automated Firewall (`tachyon-ui:managed`)
 
-![Wizard Steps 3 and 4 — Panel Isolation, Stealth Subscriptions and Self-Audit](../images/en/12-wizard-stealth-audit.png)
+![Masking Wizard Steps 3 and 4 — Panel Isolation, Stealth Subscriptions and Self-Audit](../images/en/29-wizard-stealth-audit.png)
 
 - **`web_base_path` (Secret Admin Prefix)**: When set (e.g. `/p-8f3c21a9`), root paths `/`, `/login`, and `/api/*` stop serving panel assets or API endpoints. Any request outside `<web_base_path>` is routed exclusively through ACME → Covert Knock → `StealthSubGate` → `SiteEngine`.
   > **Recovery if you forget the path:** Run `tachyon-panel reset-path` over SSH to safely reset `web_base_path` back to root `/` (creates a backup automatically).
@@ -116,9 +140,21 @@ flowchart TD
 - **`redeem_path`**: Custom voucher redemption path (scoped inside `<web_base_path>/redeem` when blank and `web_base_path` is set).
 - **Neutral HTTP Fingerprint**: Emits `Server: nginx/1.26.2`, RFC-7231 `Date`, proper HTTP reason phrases (`404 Not Found`), neutral `sid=...; HttpOnly; SameSite=Strict` cookies (`+ ; Secure` on TLS), zero `Set-Cookie: 3x-ui`, zero `Access-Control-Allow-Origin: *`, and `/?decoy=1` never leaks the SPA.
 
+![Settings — Automated Firewall and Themes](../images/en/30-settings-firewall-themes.png)
+
+- **Firewall Automation (`auto_firewall_enabled`)**: Reconciles `UFW` / `firewalld` (`firewall-cmd`) / `iptables` rules tagged `tachyon-ui:managed`, cleans up rules for removed/disabled inbounds, and strictly protects SSH port `22` and manual administrator rules.
+
+| Step 3 Control | Action / API | Purpose |
+| :--- | :--- | :--- |
+| **Secret Panel Path (`web_base_path`)** | `PUT /api/settings` | Moves admin UI and `/api/*` under a secret URL prefix (e.g. `/p-8f3c21a9`). |
+| **Legacy 3x-ui Compat Toggle (`enable_3xui_compat_api`)** | `PUT /api/settings` | Keeps `/panel/api/inbounds/*` disabled (`false` recommended) so probes receive `SiteEngine` 404 HTML. |
+| **Polymorphic Subscription Path (`sub_path_style` & `sub_legacy_alias`)** | `PUT /api/settings` | Switches subscription URLs to `static_feed`, `cdn_v2`, `rss_updates`, or a custom path and disables `/sub/`. |
+| **Scanner Filter & Portal Guard (`sub_block_scanners`, `sub_portal_guard`)** | `PUT /api/settings` | Drops scanner User-Agents to decoy 404 and requires `?k=<portal_key>` for browser portal views. |
+| **Voucher Path (`redeem_path`) & Auto-Firewall Toggle (`auto_firewall_enabled`)** | `PUT /api/settings` | Sets the `/redeem` endpoint and toggles safe `tachyon-ui:managed` firewall synchronization. |
+
 ---
 
-### Step 4: Covert Knock & Self-Audit (`0–100`)
+### Step 4: Covert Knock & 9-Check Self-Audit (`0–100`)
 
 Click **Run Self-Audit** (`POST /api/web/self-audit`) to execute **9 automated checks** (including a live internal `StealthSubGate` probe for a non-existent `sub_id`) yielding a `0–100` score and grade (`A+` to `D`):
 
@@ -136,4 +172,4 @@ Click **Run Self-Audit** (`POST /api/web/self-audit`) to execute **9 automated c
 
 ---
 
-[Previous: Chapter 1 — Installation, Docker, Source Build & CLI](01-installation-and-cli.md) | [Back to Index](../../README.md) | [Next: Chapter 3 — Subscriptions, Web Portal, Vouchers & Tachyon Covert Knock](03-subscriptions-and-covert-knock.md)
+[Previous: Chapter 1 — Installation, Docker, Source Build & CLI](01-installation-and-cli.md) | [Every Tab & Button UI Guide](11-ui-every-tab-and-button-guide.md) | [27-Protocol Catalog](protocols/README.md) | [Back to Index](../../README.md) | [Next: Chapter 3 — Subscriptions, Web Portal, Vouchers & Tachyon Covert Knock](03-subscriptions-and-covert-knock.md)
